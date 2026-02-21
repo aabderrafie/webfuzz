@@ -910,6 +910,7 @@ class WebFuzz:
         self.deep        = config.get("deep", False)
         self.extensions  = config.get("extensions", DEFAULT_EXTENSIONS)
         self.domain      = config.get("domain", "")
+        self.custom_wordlist = config.get("wordlist", "")
         self.cookies     = config.get("cookies", "")
         self.add_headers = config.get("headers", {})
 
@@ -942,7 +943,14 @@ class WebFuzz:
         On subsequent calls for the same category, escalates to next-best.
         """
         used = self._used_wordlists.get(category, [])
-        if not used:
+        if not used and self.custom_wordlist:
+            wl_path = Path(self.custom_wordlist)
+            if wl_path.is_file():
+                wl = wl_path
+            else:
+                warn(f"Custom wordlist '{self.custom_wordlist}' not found. Falling back to auto-discovery.")
+                wl = self.wl_engine.best(category, fast=not self.deep)
+        elif not used:
             wl = self.wl_engine.best(category, fast=not self.deep)
         else:
             # Already used at least one — escalate to the next-best unused list
@@ -1375,7 +1383,8 @@ def build_argparser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    p.add_argument("-t",  "--target",     required=False, help="Target URL")
+    p.add_argument("-u",  "--target",     required=False, help="Target URL")
+    p.add_argument("-w",  "--wordlist",   help="Custom wordlist path")
     p.add_argument(       "--domain",     help="Domain for subdomain/vhost fuzzing")
     p.add_argument("-T",  "--threads",    type=int, default=50, help="Thread count (default: 50)")
     p.add_argument(       "--timeout",    type=int, default=10, help="Request timeout seconds")
@@ -1454,6 +1463,7 @@ def main():
         "timeout":    args.timeout,
         "deep":       args.deep,
         "extensions": extensions,
+        "wordlist":   args.wordlist or "",
         "domain":     args.domain or "",
         "cookies":    args.cookies or "",
         "headers":    custom_hdrs,

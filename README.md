@@ -120,7 +120,7 @@ python3 webfuzz.py -t http://10.10.10.10 --dir -T 100 --timeout 15 \
 ## Usage
 
 ```
-usage: webfuzz [-h] [-t TARGET] [--domain DOMAIN] [-T THREADS]
+usage: webfuzz [-h] [-u TARGET] [-w WORDLIST] [--domain DOMAIN] [-T THREADS]
                [--timeout TIMEOUT] [--deep] [-x EXTENSIONS]
                [--cookies COOKIES] [-H Name:Value] [-d] [-F] [-r] [-p] [-m]
                [-P] [-s] [-v] [-hd] [-c] [-j] [-f] [--put-path PUT_PATH]
@@ -130,7 +130,9 @@ usage: webfuzz [-h] [-t TARGET] [--domain DOMAIN] [-T THREADS]
 
 options:
   -h, --help            show this help message and exit
-  -t, --target TARGET   Target URL
+  -u, --target TARGET   Target URL
+  -w, --wordlist WORDLIST
+                        Custom wordlist path
   --domain DOMAIN       Domain for subdomain/vhost fuzzing
   -T, --threads THREADS
                         Thread count (default: 50)
