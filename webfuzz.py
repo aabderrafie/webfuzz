@@ -1372,29 +1372,7 @@ def build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="webfuzz",
         description=f"WebFuzz v{VERSION} — Professional Web Fuzzing Tool (Legal PTLabs)",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Interactive menu
-  python3 webfuzz.py
-
-  # Quick directory scan
-  python3 webfuzz.py -t http://10.10.10.10 --dir
-
-  # Full auto scan (deep mode)
-  python3 webfuzz.py -t http://10.10.10.10 --full --deep
-
-  # Subdomain + vhost fuzzing
-  python3 webfuzz.py -t http://10.10.10.10 --subdomain --vhost --domain target.htb
-
-  # JSON body fuzzing with custom template
-  python3 webfuzz.py -t http://10.10.10.10 --json --json-path /api/login \\
-      --json-template '{"username":"FUZZ","password":"test"}'
-
-  # Custom threads, timeout, cookies
-  python3 webfuzz.py -t http://10.10.10.10 --dir -T 100 --timeout 15 \\
-      --cookies "session=abc123"
-        """
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
     p.add_argument("-t",  "--target",     required=False, help="Target URL")
@@ -1408,18 +1386,18 @@ Examples:
                    metavar="Name:Value",  help="Custom header (repeatable)")
 
     modes = p.add_argument_group("Scan Modes")
-    modes.add_argument("--dir",          action="store_true", help="Directory fuzzing")
-    modes.add_argument("--files",        action="store_true", help="File/extension fuzzing")
-    modes.add_argument("--recursive",    action="store_true", help="Recursive directory fuzzing")
-    modes.add_argument("--params",       action="store_true", help="GET+POST parameter fuzzing")
-    modes.add_argument("--methods",      action="store_true", help="HTTP method testing (all)")
-    modes.add_argument("--put",          action="store_true", help="PUT upload test")
-    modes.add_argument("--subdomain",    action="store_true", help="Subdomain enumeration")
-    modes.add_argument("--vhost",        action="store_true", help="VHost fuzzing")
-    modes.add_argument("--headers",      action="store_true", help="Header injection fuzzing")
-    modes.add_argument("--cookies-fuzz", action="store_true", help="Cookie value fuzzing")
-    modes.add_argument("--json",         action="store_true", help="JSON body fuzzing")
-    modes.add_argument("--full",         action="store_true", help="Run all modules")
+    modes.add_argument("-d", "--dir",          action="store_true", help="Directory fuzzing")
+    modes.add_argument("-F", "--files",        action="store_true", help="File/extension fuzzing")
+    modes.add_argument("-r", "--recursive",    action="store_true", help="Recursive directory fuzzing")
+    modes.add_argument("-p", "--params",       action="store_true", help="GET+POST parameter fuzzing")
+    modes.add_argument("-m", "--methods",      action="store_true", help="HTTP method testing (all)")
+    modes.add_argument("-P", "--put",          action="store_true", help="PUT upload test")
+    modes.add_argument("-s", "--subdomain",    action="store_true", help="Subdomain enumeration")
+    modes.add_argument("-v", "--vhost",        action="store_true", help="VHost fuzzing")
+    modes.add_argument("-hd", "--headers",     action="store_true", help="Header injection fuzzing")
+    modes.add_argument("-c", "--cookies-fuzz", action="store_true", help="Cookie value fuzzing")
+    modes.add_argument("-j", "--json",         action="store_true", help="JSON body fuzzing")
+    modes.add_argument("-f", "--full",         action="store_true", help="Run all modules")
 
     advanced = p.add_argument_group("Advanced")
     advanced.add_argument("--put-path",        default="/upload/test.txt")

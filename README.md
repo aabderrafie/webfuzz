@@ -120,13 +120,27 @@ python3 webfuzz.py -t http://10.10.10.10 --dir -T 100 --timeout 15 \
 ## Usage
 
 ```
-usage: webfuzz [-h] [-t TARGET] [-w WORDLIST] [-D DOMAIN] [-T THREADS]
-               [--timeout TIMEOUT] [--deep] [-x EXTENSIONS] [-C COOKIES]
-               [-H Name:Value] [-d] [-F] [-r] [-p] [-m] [-P] [-s] [-v] [-hd]
-               [-c] [-j] [-f] [--put-path PUT_PATH] [--json-path JSON_PATH]
-               [--json-template JSON_TEMPLATE] [--cookie-name COOKIE_NAME]
-               [--method-paths METHOD_PATHS]
+usage: webfuzz [-h] [-t TARGET] [--domain DOMAIN] [-T THREADS]
+               [--timeout TIMEOUT] [--deep] [-x EXTENSIONS]
+               [--cookies COOKIES] [-H Name:Value] [-d] [-F] [-r] [-p] [-m]
+               [-P] [-s] [-v] [-hd] [-c] [-j] [-f] [--put-path PUT_PATH]
+               [--json-path JSON_PATH] [--json-template JSON_TEMPLATE]
+               [--cookie-name COOKIE_NAME] [--method-paths METHOD_PATHS]
                [--recursion-depth RECURSION_DEPTH] [--tools-check]
+
+options:
+  -h, --help            show this help message and exit
+  -t, --target TARGET   Target URL
+  --domain DOMAIN       Domain for subdomain/vhost fuzzing
+  -T, --threads THREADS
+                        Thread count (default: 50)
+  --timeout TIMEOUT     Request timeout seconds
+  --deep                Deep scan (larger wordlists)
+  -x, --extensions EXTENSIONS
+                        Comma-separated extensions for file fuzzing
+  --cookies COOKIES     Cookie string: name=val; name2=val2
+  -H, --header Name:Value
+                        Custom header (repeatable)
 
 Scan Modes:
   -d, --dir             Directory fuzzing
@@ -141,18 +155,6 @@ Scan Modes:
   -c, --cookies-fuzz    Cookie value fuzzing
   -j, --json            JSON body fuzzing
   -f, --full            Run all modules
-
-Options:
-  -t, --target TARGET   Target URL
-  -w, --wordlist WORDLIST Custom wordlist path
-  -D, --domain DOMAIN   Domain for subdomain/vhost fuzzing
-  -T, --threads THREADS Thread count (default: 50)
-  --timeout TIMEOUT     Request timeout seconds
-  --deep                Deep scan (larger wordlists)
-  -x, --extensions EXTENSIONS Comma-separated extensions for file fuzzing
-  -C, --cookies COOKIES Cookie string: name=val; name2=val2
-  -H, --header Name:Value Custom header (repeatable)
-  --tools-check         Show tool & wordlist status, then exit
 ```
 
 ---
