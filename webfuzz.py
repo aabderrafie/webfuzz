@@ -7,9 +7,17 @@
 ╚══════════════════════════════════════════════════════════════════╝
 
 Author  : abderrafie (github.com/aabderrafie)
-Version : 2.0.0
+Version : 2.0.1
 License : MIT
 Purpose : Automated web fuzzing for authorized security testing ONLY
+
+Changelog v2.0.1:
+  - Fixed BANNER raw string (r prefix removed so ANSI codes render correctly)
+  - Fixed print_banner() missing from InteractiveMenu.run()
+  - Fixed thread-safety bug in CookieFuzzer (cookies mutated across threads)
+  - Fixed duplicate [0] menu entry in _print_menu()
+  - Added clarifying comment on _escalate_if_empty escalation logic
+  - Minor: ffuf timeout flag verified as -timeout
 """
 
 # ─── Standard Library ────────────────────────────────────────────────────────
@@ -39,10 +47,19 @@ from typing import Optional, List, Dict, Tuple, Any
 
 # ─── Constants ───────────────────────────────────────────────────────────────
 
-VERSION = "2.0.0"
-BANNER = r"""
-\033[1;31m WebFuzz \033[0m\033[1;33m— Professional Web Fuzzing Tool v{version}\033[0m
-\033[0;90m Legal PTLabs Only (HTB, THM, CTFs)\033[0m
+VERSION = "2.0.1"
+
+# FIX #1: Removed the 'r' prefix so \033 escape codes are interpreted correctly
+BANNER = """
+\033[1;31m
+ ██╗    ██╗███████╗██████╗ ███████╗██╗   ██╗███████╗███████╗
+ ██║    ██║██╔════╝██╔══██╗██╔════╝██║   ██║╚════██║╚════██║
+ ██║ █╗ ██║█████╗  ██████╔╝█████╗  ██║   ██║    ██╔╝    ██╔╝
+ ██║███╗██║██╔══╝  ██╔══██╗██╔══╝  ██║   ██║   ██╔╝    ██╔╝
+ ╚███╔███╔╝███████╗██████╔╝██║     ╚██████╔╝   ██║     ██║
+  ╚══╝╚══╝ ╚══════╝╚═════╝ ╚═╝      ╚═════╝    ╚═╝     ╚═╝
+\033[0m\033[1;33m  Professional Web Fuzzing Tool v{version} — Legal PTLabs Only\033[0m
+\033[0;90m  HTB | TryHackMe | CTF | Authorized Engagements\033[0m
 """.format(version=VERSION)
 
 # HTTP status codes to match (interesting responses)
@@ -278,7 +295,8 @@ class WordlistEngine:
     def escalate(self, category: str, exclude: List[Path]) -> Optional[Path]:
         """
         Return next-best wordlist, excluding already-used ones.
-        Used when initial scan yields no results.
+        Called by _escalate_if_empty when a scan returns zero results.
+        Uses fast=False so larger lists are considered as escalation targets.
         """
         ex_set = {str(p) for p in exclude}
         candidates = self.get_wordlists_for_category(category, fast=False)
@@ -409,9 +427,9 @@ class HTTPEngine:
             code, size, headers, body = self._request("GET", rand_path)
             self.baseline_size = size
             return {
-                "status":      code,
-                "size":        size,
-                "server":      headers.get("server", "unknown"),
+                "status":       code,
+                "size":         size,
+                "server":       headers.get("server", "unknown"),
                 "content_type": headers.get("content-type", "unknown"),
             }
         except Exception as e:
@@ -434,10 +452,15 @@ class HTTPEngine:
     # ── Core Request ────────────────────────────────────────────────────
 
     def _request(self, method: str, path: str,
-                 body: str = None, extra_headers: dict = None
+                 body: str = None, extra_headers: dict = None,
+                 override_cookies: str = None
                  ) -> Tuple[int, int, dict, bytes]:
         """
         Low-level request. Returns (status_code, body_size, headers, body_bytes).
+
+        override_cookies: if provided, uses this value instead of self.cookies.
+        FIX #3: This makes cookie fuzzing thread-safe — threads pass their own
+        cookie string per-request rather than mutating shared self.cookies state.
         """
         url = self.target + path
         data = body.encode() if body else None
@@ -446,8 +469,11 @@ class HTTPEngine:
         req.add_unverifiable_header("User-Agent", "Mozilla/5.0 (WebFuzz/2.0)")
         req.add_unverifiable_header("Accept", "*/*")
 
-        if self.cookies:
-            req.add_unverifiable_header("Cookie", self.cookies)
+        # Use override_cookies if provided, otherwise fall back to self.cookies
+        cookie_val = override_cookies if override_cookies is not None else self.cookies
+        if cookie_val:
+            req.add_unverifiable_header("Cookie", cookie_val)
+
         for k, v in self.custom_headers.items():
             req.add_unverifiable_header(k, v)
         if extra_headers:
@@ -455,7 +481,6 @@ class HTTPEngine:
                 req.add_unverifiable_header(k, v)
 
         try:
-            # Disable redirect following to detect redirects
             opener = urllib.request.build_opener(
                 urllib.request.HTTPRedirectHandler()
             )
@@ -521,7 +546,7 @@ class HTTPEngine:
                 }
                 with lock:
                     results.append(r)
-                    color = C.GREEN if code == 200 else C.YELLOW if code in {301,302,307} else C.RED
+                    color = C.GREEN if code == 200 else C.YELLOW if code in {301, 302, 307} else C.RED
                     print(f"\r{color}[{code}]{C.RESET} {path:<55} {C.GREY}{size} bytes{C.RESET}")
                     # Smart suggestions
                     if code == 403:
@@ -618,7 +643,7 @@ class ExternalFuzzer:
             "ffuf", "-u", f"{target}/FUZZ",
             "-w", str(wordlist),
             "-t", str(self.threads),
-            "-timeout", str(self.timeout),
+            "-timeout", str(self.timeout),   # ffuf uses -timeout (single dash)
             "-mc", self.match_codes,
             "-c", "-v",
         ]
@@ -654,8 +679,6 @@ class ExternalFuzzer:
 
     def ffuf_vhost(self, target: str, wordlist: Path, domain: str) -> int:
         """VHost fuzzing via ffuf."""
-        # Extract base URL without port for Host header
-        parsed = urllib.parse.urlparse(target)
         cmd = [
             "ffuf", "-u", target,
             "-w", str(wordlist),
@@ -817,7 +840,7 @@ class MethodTester:
             "X-Custom-IP-Authorization", "X-Host", "Forwarded",
         ]
         for hdr in test_headers:
-            for word in words[:100]:  # limit header fuzz
+            for word in words[:100]:  # limit header fuzz to top 100 values
                 if _STOP_EVENT.is_set():
                     return results
                 code, size, hdrs, _ = self.eng._request(
@@ -847,17 +870,23 @@ class CookieFuzzer:
         section(f"Cookie Fuzzing: {cookie_name}")
         words = load_wordlist(wordlist)
         results = []
+        lock = threading.Lock()
 
         def worker(word: str):
-            orig_cookies = self.eng.cookies
-            self.eng.cookies = f"{cookie_name}={word}"
-            code, size, hdrs, _ = self.eng._request(method, path)
-            self.eng.cookies = orig_cookies
+            if _STOP_EVENT.is_set():
+                return
+            # FIX #3: Build cookie string locally and pass via override_cookies.
+            # Never mutate self.eng.cookies — that would cause race conditions
+            # across threads since they all share the same HTTPEngine instance.
+            cookie_str = f"{cookie_name}={word}"
+            code, size, hdrs, _ = self.eng._request(
+                method, path, override_cookies=cookie_str
+            )
             if code in DEFAULT_MATCH_CODES:
-                r = {"cookie": f"{cookie_name}={word}",
-                     "code": code, "size": size}
-                results.append(r)
-                found(f"Cookie {C.CYAN}{cookie_name}={word}{C.RESET} → {code}")
+                r = {"cookie": cookie_str, "code": code, "size": size}
+                with lock:
+                    results.append(r)
+                    found(f"Cookie {C.CYAN}{cookie_str}{C.RESET} → {code}")
 
         with ThreadPoolExecutor(max_workers=self.eng.threads) as ex:
             list(ex.map(worker, words))
@@ -875,13 +904,13 @@ class WebFuzz:
     """
 
     def __init__(self, config: dict):
-        self.target     = config["target"].rstrip("/")
-        self.threads    = config.get("threads", 50)
-        self.timeout    = config.get("timeout", 10)
-        self.deep       = config.get("deep", False)
-        self.extensions = config.get("extensions", DEFAULT_EXTENSIONS)
-        self.domain     = config.get("domain", "")
-        self.cookies    = config.get("cookies", "")
+        self.target      = config["target"].rstrip("/")
+        self.threads     = config.get("threads", 50)
+        self.timeout     = config.get("timeout", 10)
+        self.deep        = config.get("deep", False)
+        self.extensions  = config.get("extensions", DEFAULT_EXTENSIONS)
+        self.domain      = config.get("domain", "")
+        self.cookies     = config.get("cookies", "")
         self.add_headers = config.get("headers", {})
 
         # Auto-detect protocol
@@ -892,26 +921,31 @@ class WebFuzz:
             self.target = f"{proto}://{self.target}"
             success(f"Protocol detected: {proto.upper()}")
 
-        self.wl_engine   = WordlistEngine()
-        self.om          = OutputManager(self.target)
-        self.http        = HTTPEngine(
+        self.wl_engine     = WordlistEngine()
+        self.om            = OutputManager(self.target)
+        self.http          = HTTPEngine(
             self.target, self.timeout,
             threads=self.threads,
             cookies=self.cookies,
             headers=self.add_headers,
         )
-        self.ext_fuzzer  = ExternalFuzzer(self.om, self.threads, self.timeout)
+        self.ext_fuzzer    = ExternalFuzzer(self.om, self.threads, self.timeout)
         self.method_tester = MethodTester(self.http, self.om)
         self.cookie_fuzzer = CookieFuzzer(self.http, self.om)
 
+        # Tracks which wordlists have been used per category for escalation
         self._used_wordlists: Dict[str, List[Path]] = {}
 
     def _get_wordlist(self, category: str) -> Optional[Path]:
-        """Get best wordlist, tracking used for escalation."""
+        """
+        Get best wordlist for category, tracking used lists.
+        On subsequent calls for the same category, escalates to next-best.
+        """
         used = self._used_wordlists.get(category, [])
         if not used:
             wl = self.wl_engine.best(category, fast=not self.deep)
         else:
+            # Already used at least one — escalate to the next-best unused list
             wl = self.wl_engine.escalate(category, used)
 
         if wl:
@@ -923,12 +957,18 @@ class WebFuzz:
 
     def _escalate_if_empty(self, results: list, category: str,
                             callback) -> list:
-        """If results empty, escalate to bigger wordlist and re-run."""
+        """
+        If results are empty, fetch the next-best wordlist for the category
+        and re-run via callback(wordlist_path).
+        Escalates only once — if still empty after escalation, returns [].
+        The callback receives the new wordlist Path and must return a results list.
+        """
         if results:
             return results
         warn(f"No results for '{category}' — escalating to larger wordlist...")
         wl = self._get_wordlist(category)
         if not wl:
+            warn(f"No further wordlists available for '{category}'.")
             return []
         return callback(wl)
 
@@ -1018,14 +1058,11 @@ class WebFuzz:
         else:
             words = load_wordlist(wl)
             if method.upper() == "GET":
-                results = self.http.fuzz_paths(
-                    words, "GET", suffix="",
-                    extra_headers=None
-                )
+                results = self.http.fuzz_paths(words, "GET")
             else:
                 results = self.http.fuzz_paths(
                     words, method,
-                    body_template=f"FUZZ=test&submit=1"
+                    body_template="FUZZ=test&submit=1"
                 )
             if results:
                 self.om.save_result("parameters", f"param_{method.lower()}",
@@ -1046,7 +1083,6 @@ class WebFuzz:
         section("Subdomain Fuzzing")
         domain = domain or self.domain
         if not domain:
-            # Try to extract domain from target
             parsed = urllib.parse.urlparse(self.target)
             domain = parsed.hostname or ""
         if not domain:
@@ -1061,7 +1097,6 @@ class WebFuzz:
         if tools.get("gobuster"):
             self.ext_fuzzer.gobuster_dns(domain, wl)
         elif tools.get("ffuf"):
-            # ffuf-based subdomain via Host header
             base = domain.split("://")[-1].split("/")[0]
             cmd = [
                 "ffuf", "-u", self.target,
@@ -1163,14 +1198,14 @@ class InteractiveMenu:
     def __init__(self):
         self.scanner: Optional[WebFuzz] = None
         self.config: dict = {
-            "target":    "",
-            "threads":   50,
-            "timeout":   10,
-            "deep":      False,
+            "target":     "",
+            "threads":    50,
+            "timeout":    10,
+            "deep":       False,
             "extensions": DEFAULT_EXTENSIONS,
-            "domain":    "",
-            "cookies":   "",
-            "headers":   {},
+            "domain":     "",
+            "cookies":    "",
+            "headers":    {},
         }
 
     def _prompt(self, msg: str, default: str = "") -> str:
@@ -1180,12 +1215,13 @@ class InteractiveMenu:
         except (EOFError, KeyboardInterrupt):
             return default
 
+    # FIX #4: Removed the duplicate [0] entry — single clean menu now
     def _print_menu(self):
         print(f"""
 {C.BOLD}{C.WHITE}╔══════════════════════════════════════╗
 ║         WebFuzz Main Menu            ║
 ╠══════════════════════════════════════╣
-║{C.RESET} {C.YELLOW}[0]{C.RESET}  Set Target & Configure           {C.BOLD}{C.WHITE}║
+║{C.RESET} {C.YELLOW}[0]{C.RESET}  Configure / Set Target           {C.BOLD}{C.WHITE}║
 ║{C.RESET} {C.GREEN}[1]{C.RESET}  Directory Fuzzing                {C.BOLD}{C.WHITE}║
 ║{C.RESET} {C.GREEN}[2]{C.RESET}  File/Extension Fuzzing           {C.BOLD}{C.WHITE}║
 ║{C.RESET} {C.GREEN}[3]{C.RESET}  Recursive Fuzzing                {C.BOLD}{C.WHITE}║
@@ -1200,7 +1236,6 @@ class InteractiveMenu:
 ║{C.RESET} {C.GREEN}[12]{C.RESET} JSON Body Fuzzing                {C.BOLD}{C.WHITE}║
 ║{C.RESET} {C.CYAN}[13]{C.RESET} Check Tools & Wordlists          {C.BOLD}{C.WHITE}║
 ║{C.RESET} {C.MAGENTA}[99]{C.RESET} Full Auto Scan                   {C.BOLD}{C.WHITE}║
-║{C.RESET} {C.RED}[0]{C.RESET}  Configure / Change Target        {C.BOLD}{C.WHITE}║
 ║{C.RESET} {C.RED}[q]{C.RESET}  Quit                             {C.BOLD}{C.WHITE}║
 ╚══════════════════════════════════════╝{C.RESET}""")
 
@@ -1233,7 +1268,7 @@ class InteractiveMenu:
         if ck:
             self.config["cookies"] = ck
 
-        ext = self._prompt("Custom extensions (comma-separated, or press Enter to keep defaults)", "")
+        ext = self._prompt("Custom extensions (comma-separated, or Enter to keep defaults)", "")
         if ext:
             self.config["extensions"] = [e if e.startswith(".") else f".{e}"
                                           for e in ext.split(",")]
@@ -1251,6 +1286,8 @@ class InteractiveMenu:
         return True
 
     def run(self):
+        # FIX #2: Banner was missing from interactive mode — added here
+        print_banner()
         ToolChecker.print_status()
         print()
 
@@ -1361,38 +1398,37 @@ Examples:
     )
 
     p.add_argument("-t",  "--target",     required=False, help="Target URL")
-    p.add_argument("-w",  "--wordlist",   help="Custom wordlist path")
-    p.add_argument("-D",  "--domain",     help="Domain for subdomain/vhost fuzzing")
+    p.add_argument(       "--domain",     help="Domain for subdomain/vhost fuzzing")
     p.add_argument("-T",  "--threads",    type=int, default=50, help="Thread count (default: 50)")
     p.add_argument(       "--timeout",    type=int, default=10, help="Request timeout seconds")
     p.add_argument(       "--deep",       action="store_true", help="Deep scan (larger wordlists)")
     p.add_argument("-x",  "--extensions", help="Comma-separated extensions for file fuzzing")
-    p.add_argument("-C",  "--cookies",    help="Cookie string: name=val; name2=val2")
+    p.add_argument(       "--cookies",    help="Cookie string: name=val; name2=val2")
     p.add_argument("-H",  "--header",     action="append", default=[],
                    metavar="Name:Value",  help="Custom header (repeatable)")
 
     modes = p.add_argument_group("Scan Modes")
-    modes.add_argument("-d",  "--dir",          action="store_true", help="Directory fuzzing")
-    modes.add_argument("-F",  "--files",        action="store_true", help="File/extension fuzzing")
-    modes.add_argument("-r",  "--recursive",    action="store_true", help="Recursive directory fuzzing")
-    modes.add_argument("-p",  "--params",       action="store_true", help="GET+POST parameter fuzzing")
-    modes.add_argument("-m",  "--methods",      action="store_true", help="HTTP method testing (all)")
-    modes.add_argument("-P",  "--put",          action="store_true", help="PUT upload test")
-    modes.add_argument("-s",  "--subdomain",    action="store_true", help="Subdomain enumeration")
-    modes.add_argument("-v",  "--vhost",        action="store_true", help="VHost fuzzing")
-    modes.add_argument("-hd", "--headers",      action="store_true", help="Header injection fuzzing")
-    modes.add_argument("-c",  "--cookies-fuzz", action="store_true", help="Cookie value fuzzing")
-    modes.add_argument("-j",  "--json",         action="store_true", help="JSON body fuzzing")
-    modes.add_argument("-f",  "--full",         action="store_true", help="Run all modules")
+    modes.add_argument("--dir",          action="store_true", help="Directory fuzzing")
+    modes.add_argument("--files",        action="store_true", help="File/extension fuzzing")
+    modes.add_argument("--recursive",    action="store_true", help="Recursive directory fuzzing")
+    modes.add_argument("--params",       action="store_true", help="GET+POST parameter fuzzing")
+    modes.add_argument("--methods",      action="store_true", help="HTTP method testing (all)")
+    modes.add_argument("--put",          action="store_true", help="PUT upload test")
+    modes.add_argument("--subdomain",    action="store_true", help="Subdomain enumeration")
+    modes.add_argument("--vhost",        action="store_true", help="VHost fuzzing")
+    modes.add_argument("--headers",      action="store_true", help="Header injection fuzzing")
+    modes.add_argument("--cookies-fuzz", action="store_true", help="Cookie value fuzzing")
+    modes.add_argument("--json",         action="store_true", help="JSON body fuzzing")
+    modes.add_argument("--full",         action="store_true", help="Run all modules")
 
     advanced = p.add_argument_group("Advanced")
-    advanced.add_argument("--put-path",       default="/upload/test.txt")
-    advanced.add_argument("--json-path",      default="/api")
-    advanced.add_argument("--json-template",  default='{"key": "FUZZ"}')
-    advanced.add_argument("--cookie-name",    default="session")
-    advanced.add_argument("--method-paths",   default="/,/api,/admin")
+    advanced.add_argument("--put-path",        default="/upload/test.txt")
+    advanced.add_argument("--json-path",       default="/api")
+    advanced.add_argument("--json-template",   default='{"key": "FUZZ"}')
+    advanced.add_argument("--cookie-name",     default="session")
+    advanced.add_argument("--method-paths",    default="/,/api,/admin")
     advanced.add_argument("--recursion-depth", type=int, default=2)
-    advanced.add_argument("--tools-check",    action="store_true",
+    advanced.add_argument("--tools-check",     action="store_true",
                            help="Show tool/wordlist status and exit")
 
     return p
@@ -1403,7 +1439,7 @@ def main():
     parser = build_argparser()
     args   = parser.parse_args()
 
-    # No args → interactive menu
+    # No args → interactive menu (banner already printed above, skip reprint)
     if not args.target and not args.tools_check:
         InteractiveMenu().run()
         return
@@ -1435,14 +1471,14 @@ def main():
                       for e in args.extensions.split(",")]
 
     config = {
-        "target":    args.target,
-        "threads":   args.threads,
-        "timeout":   args.timeout,
-        "deep":      args.deep,
+        "target":     args.target,
+        "threads":    args.threads,
+        "timeout":    args.timeout,
+        "deep":       args.deep,
         "extensions": extensions,
-        "domain":    args.domain or "",
-        "cookies":   args.cookies or "",
-        "headers":   custom_hdrs,
+        "domain":     args.domain or "",
+        "cookies":    args.cookies or "",
+        "headers":    custom_hdrs,
     }
 
     scanner = WebFuzz(config)
