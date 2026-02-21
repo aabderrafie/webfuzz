@@ -518,6 +518,7 @@ class HTTPEngine:
         total = len(paths)
         done = [0]
         lock = threading.Lock()
+        start = time.time()
 
         def worker(word: str):
             if _STOP_EVENT.is_set():
@@ -528,11 +529,6 @@ class HTTPEngine:
 
             with lock:
                 done[0] += 1
-                if done[0] % 100 == 0 or done[0] == total:
-                    pct = done[0] * 100 // total
-                    bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
-                    print(f"\r  {C.CYAN}[{bar}]{C.RESET} {done[0]}/{total} "
-                          f"({pct}%)  ", end="", flush=True)
 
             if self._is_interesting(code, size):
                 r = {
@@ -546,9 +542,7 @@ class HTTPEngine:
                 }
                 with lock:
                     results.append(r)
-                    color = C.GREEN if code == 200 else C.YELLOW if code in {301, 302, 307} else C.RED
-                    print(f"\r{color}[{code}]{C.RESET} {path:<55} {C.GREY}{size} bytes{C.RESET}")
-                    # Smart suggestions
+                    # Smart suggestions (silent during scan, printed after)
                     if code == 403:
                         suggest(f"403 at {path} — try bypass: X-Original-URL, X-Rewrite-URL headers")
                     if "upload" in path.lower() or "file" in path.lower():
@@ -559,7 +553,40 @@ class HTTPEngine:
                         suggest(f"Login endpoint at {path} — try POST parameter fuzzing")
             return None
 
-        print()
+        # Live timer thread
+        timer_stop = threading.Event()
+        spinner = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+
+        def _timer():
+            i = 0
+            while not timer_stop.is_set():
+                elapsed = time.time() - start
+                current = done[0]
+                pct = (current / total * 100) if total else 0
+                # ETA calculation
+                if current > 0 and elapsed > 0:
+                    rate = current / elapsed
+                    remaining = (total - current) / rate if rate > 0 else 0
+                    eta_str = time.strftime("%H:%M:%S", time.gmtime(remaining))
+                else:
+                    eta_str = "--:--:--"
+                e_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
+                spin = spinner[i % len(spinner)]
+                print(f"\r  {C.CYAN}{spin}{C.RESET} "
+                      f"{current}/{total} ({pct:.1f}%)  "
+                      f"Elapsed: {C.YELLOW}{e_str}{C.RESET}  "
+                      f"ETA: {C.GREEN}{eta_str}{C.RESET}   ",
+                      end="", flush=True)
+                i += 1
+                time.sleep(0.2)
+            elapsed = time.time() - start
+            e_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
+            print(f"\r  {C.GREEN}✔{C.RESET} Done in {C.YELLOW}{e_str}{C.RESET}"
+                  + " " * 40)
+
+        t = threading.Thread(target=_timer, daemon=True)
+        t.start()
+
         with ThreadPoolExecutor(max_workers=self.threads) as ex:
             futures = [ex.submit(worker, p) for p in paths]
             for f in as_completed(futures):
@@ -567,7 +594,9 @@ class HTTPEngine:
                     ex.shutdown(wait=False, cancel_futures=True)
                     break
                 f.result()
-        print()
+
+        timer_stop.set()
+        t.join()
         return results
 
 # ─── Wordlist Reader ─────────────────────────────────────────────────────────
@@ -602,9 +631,39 @@ class ExternalFuzzer:
 
     def _run(self, cmd: List[str], category: str, label: str,
              metadata: dict = None) -> Tuple[int, str]:
-        """Execute subprocess, stream stdout, capture output."""
+        """
+        Execute subprocess completely silently.
+        Shows only a live timer: elapsed + estimated time remaining.
+        All tool output is captured and saved to file — nothing printed to screen.
+        """
         info(f"Running: {C.GREY}{' '.join(cmd)}{C.RESET}")
         output_lines = []
+        start = time.time()
+        timer_stop = threading.Event()
+
+        def _timer():
+            """Background thread: prints elapsed + ETA on a single updating line."""
+            spinner = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+            i = 0
+            while not timer_stop.is_set():
+                elapsed = time.time() - start
+                e_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
+                spin = spinner[i % len(spinner)]
+                print(f"\r  {C.CYAN}{spin}{C.RESET} Running... "
+                      f"Elapsed: {C.YELLOW}{e_str}{C.RESET}   "
+                      f"{C.GREY}(Ctrl+C to stop){C.RESET}   ",
+                      end="", flush=True)
+                i += 1
+                time.sleep(0.1)
+            # Print final elapsed on its own line
+            elapsed = time.time() - start
+            e_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
+            print(f"\r  {C.GREEN}✔{C.RESET} Done in {C.YELLOW}{e_str}{C.RESET}"
+                  + " " * 30)
+
+        t = threading.Thread(target=_timer, daemon=True)
+        t.start()
+
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -616,23 +675,37 @@ class ExternalFuzzer:
             for line in proc.stdout:
                 stripped = line.rstrip()
                 if stripped:
-                    print(f"  {C.DIM}{stripped}{C.RESET}")
-                    output_lines.append(stripped)
+                    output_lines.append(stripped)  # capture silently — no print
                 if _STOP_EVENT.is_set():
                     proc.terminate()
                     break
             proc.wait()
             rc = proc.returncode
         except FileNotFoundError:
+            timer_stop.set()
+            t.join()
             error(f"Tool not found: {cmd[0]}")
             return -1, ""
         except Exception as e:
+            timer_stop.set()
+            t.join()
             error(f"Subprocess error: {e}")
             return -1, ""
+        finally:
+            timer_stop.set()
+            t.join()
 
         raw = "\n".join(output_lines)
         if raw.strip():
-            self.om.save_result(category, label, raw, metadata)
+            fpath = self.om.save_result(category, label, raw, metadata)
+            # Count real findings (lines with HTTP status codes)
+            hits = sum(1 for l in output_lines if re.search(r'\b[245]\d{2}\b', l))
+            if hits:
+                success(f"{C.GREEN}{hits} result(s) found{C.RESET} → {C.CYAN}{fpath}{C.RESET}")
+            else:
+                info(f"No results. Raw output saved → {C.GREY}{fpath}{C.RESET}")
+        else:
+            info("No output captured.")
         return rc, raw
 
     # ── ffuf wrappers ─────────────────────────────────────────────────
