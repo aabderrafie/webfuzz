@@ -58,8 +58,8 @@ BANNER = """
  ██║███╗██║██╔══╝  ██╔══██╗██╔══╝  ██║   ██║   ██╔╝    ██╔╝
  ╚███╔███╔╝███████╗██████╔╝██║     ╚██████╔╝   ██║     ██║
   ╚══╝╚══╝ ╚══════╝╚═════╝ ╚═╝      ╚═════╝    ╚═╝     ╚═╝
-\033[0m\033[1;33m  Professional Web Fuzzing Tool v{version} — Legal PTLabs Only\033[0m
-\033[0;90m  HTB | TryHackMe | CTF | Authorized Engagements\033[0m
+\033[0m\033[1;33m  Professional Web Fuzzing Tool v{version}\033[0m
+\033[0;90m  by D4rk0ps\033[0m
 """.format(version=VERSION)
 
 # HTTP status codes to match (interesting responses)
@@ -1379,7 +1379,8 @@ class InteractiveMenu:
 def build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="webfuzz",
-        description=f"WebFuzz v{VERSION} — Professional Web Fuzzing Tool (Legal PTLabs)",
+        usage=argparse.SUPPRESS,
+        description=f"WebFuzz v{VERSION} — Professional Web Fuzzing Tool by D4rk0ps",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 

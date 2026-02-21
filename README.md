@@ -13,9 +13,9 @@
  ╚███╔███╔╝███████╗██████╔╝██║     ╚██████╔╝   ██║     ██║
   ╚══╝╚══╝ ╚══════╝╚═════╝ ╚═╝      ╚═════╝    ╚═╝     ╚═╝
 ```
-# WebFuzz — Professional Web Fuzzing Tool
+# WebFuzz — Professional Web Fuzzing Tool by D4rk0ps
 
-> **All-in-one web fuzzer for legal penetration testing labs** (HackTheBox, TryHackMe, CTFs & authorized engagements).
+> **All-in-one web fuzzer.**
 
 WebFuzz is a pure-Python CLI tool that automates directory, file, parameter, subdomain, vhost, header, cookie, and JSON body fuzzing. It intelligently discovers and ranks installed wordlists, wraps industry tools like **ffuf** and **gobuster** when available, and falls back to a fast built-in HTTP engine when they're not.
 
@@ -120,14 +120,6 @@ python3 webfuzz.py -t http://10.10.10.10 --dir -T 100 --timeout 15 \
 ## Usage
 
 ```
-usage: webfuzz [-h] [-u TARGET] [-w WORDLIST] [--domain DOMAIN] [-T THREADS]
-               [--timeout TIMEOUT] [--deep] [-x EXTENSIONS]
-               [--cookies COOKIES] [-H Name:Value] [-d] [-F] [-r] [-p] [-m]
-               [-P] [-s] [-v] [-hd] [-c] [-j] [-f] [--put-path PUT_PATH]
-               [--json-path JSON_PATH] [--json-template JSON_TEMPLATE]
-               [--cookie-name COOKIE_NAME] [--method-paths METHOD_PATHS]
-               [--recursion-depth RECURSION_DEPTH] [--tools-check]
-
 options:
   -h, --help            show this help message and exit
   -u, --target TARGET   Target URL
