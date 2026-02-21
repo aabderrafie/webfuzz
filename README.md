@@ -6,14 +6,8 @@
 </p>
 
 ```
- ██╗    ██╗███████╗██████╗ ███████╗██╗   ██╗███████╗███████╗
- ██║    ██║██╔════╝██╔══██╗██╔════╝██║   ██║╚════██║╚════██║
- ██║ █╗ ██║█████╗  ██████╔╝█████╗  ██║   ██║    ██╔╝    ██╔╝
- ██║███╗██║██╔══╝  ██╔══██╗██╔══╝  ██║   ██║   ██╔╝    ██╔╝
- ╚███╔███╔╝███████╗██████╔╝██║     ╚██████╔╝   ██║     ██║
-  ╚══╝╚══╝ ╚══════╝╚═════╝ ╚═╝      ╚═════╝    ╚═╝     ╚═╝
+WebFuzz
 ```
-
 # WebFuzz — Professional Web Fuzzing Tool
 
 > **All-in-one web fuzzer for legal penetration testing labs** (HackTheBox, TryHackMe, CTFs & authorized engagements).
@@ -184,28 +178,4 @@ results/
 4. **Smart Suggestions** — When a 403 is found, WebFuzz suggests header bypass techniques. Upload endpoints trigger PUT test suggestions. JSON responses suggest API body fuzzing.
 5. **Auto Escalation** — If a scan yields zero results, WebFuzz automatically escalates to the next-best (larger) wordlist and re-runs.
 
----
 
-## Supported Platforms
-
-- **Linux** (Kali, Parrot, Ubuntu, Debian)
-- **macOS**
-- **WSL** (Windows Subsystem for Linux)
-
----
-
-## Disclaimer
-
-> **This tool is intended for authorized security testing ONLY.**
-> Use it exclusively on systems you own or have explicit written permission to test (e.g., HackTheBox, TryHackMe, CTF challenges, authorized penetration tests).
-> Unauthorized use against systems you do not own is **illegal** and **unethical**.
-
----
-
-## Author
-
-Created by **abderrafie** — [github.com/aabderrafie](https://github.com/aabderrafie)
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).
