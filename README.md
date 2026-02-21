@@ -6,7 +6,12 @@
 </p>
 
 ```
-WebFuzz
+ ██╗    ██╗███████╗██████╗ ███████╗██╗   ██╗███████╗███████╗
+ ██║    ██║██╔════╝██╔══██╗██╔════╝██║   ██║╚════██║╚════██║
+ ██║ █╗ ██║█████╗  ██████╔╝█████╗  ██║   ██║    ██╔╝    ██╔╝
+ ██║███╗██║██╔══╝  ██╔══██╗██╔══╝  ██║   ██║   ██╔╝    ██╔╝
+ ╚███╔███╔╝███████╗██████╔╝██║     ╚██████╔╝   ██║     ██║
+  ╚══╝╚══╝ ╚══════╝╚═════╝ ╚═╝      ╚═════╝    ╚═╝     ╚═╝
 ```
 # WebFuzz — Professional Web Fuzzing Tool
 
@@ -168,14 +173,5 @@ results/
     └── logs/            # Session log (scan.log)
 ```
 
----
-
-## How It Works
-
-1. **Baseline Detection** — Sends a random request to fingerprint the server's 404 behavior, filtering false positives by response size.
-2. **Wordlist Auto-Selection** — Scans common paths (`/usr/share/seclists`, `/usr/share/wordlists`, etc.), scores each wordlist by filename keywords, size, and category relevance, then picks the best match.
-3. **Tool Priority** — If `ffuf` is installed it's used first; then `gobuster`; otherwise the built-in `HTTPEngine` with `ThreadPoolExecutor` kicks in.
-4. **Smart Suggestions** — When a 403 is found, WebFuzz suggests header bypass techniques. Upload endpoints trigger PUT test suggestions. JSON responses suggest API body fuzzing.
-5. **Auto Escalation** — If a scan yields zero results, WebFuzz automatically escalates to the next-best (larger) wordlist and re-runs.
 
 
