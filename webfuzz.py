@@ -47,7 +47,7 @@ from typing import Optional, List, Dict, Tuple, Any
 
 # ─── Constants ───────────────────────────────────────────────────────────────
 
-VERSION = "2.0.1"
+VERSION = "2.1.0"
 
 # FIX #1: Removed the 'r' prefix so \033 escape codes are interpreted correctly
 BANNER = """
@@ -65,8 +65,11 @@ BANNER = """
 # HTTP status codes to match (interesting responses)
 DEFAULT_MATCH_CODES = {200, 201, 204, 301, 302, 307, 401, 403, 405}
 
-# File extensions for file fuzzing
-DEFAULT_EXTENSIONS = [
+# Default file extensions — kept minimal (fast). Add more with --ext
+DEFAULT_EXTENSIONS = [".php", ".html", ".txt", ".bak", ".js"]
+
+# Full extension list used when --ext all is passed
+FULL_EXTENSIONS = [
     ".php", ".html", ".htm", ".asp", ".aspx", ".jsp", ".js",
     ".css", ".json", ".xml", ".txt", ".bak", ".old", ".log",
     ".sql", ".zip", ".tar", ".gz", ".rar", ".env", ".config",
@@ -186,8 +189,8 @@ class WordlistEngine:
     CATEGORY_HINTS = {
         "directory":  ["directory", "dir", "web", "common", "raft", "dirbuster", "dirb", "content", "discovery"],
         "file":       ["files", "file", "extension", "web", "content", "common"],
-        "subdomain":  ["subdomain", "sub", "dns", "host", "resolvers"],
-        "vhost":      ["vhost", "virtual", "subdomain", "host"],
+        "subdomain":  ["subdomains", "subdomain", "sub", "dns", "bitquark", "n0kovo", "resolvers", "best-dns"],
+        "vhost":      ["subdomains", "subdomain", "vhost", "virtual", "best-dns", "n0kovo"],
         "parameter":  ["param", "parameter", "query", "get", "post", "burp", "api"],
         "header":     ["header", "ua", "user-agent", "x-forwarded"],
         "json":       ["json", "api", "body", "payload"],
@@ -526,34 +529,25 @@ class HTTPEngine:
             path = f"/{prefix}{word}{suffix}"
             body = body_template.replace("FUZZ", word) if body_template else None
             code, size, hdrs, raw = self._request(method, path, body, extra_headers)
-
             with lock:
                 done[0] += 1
-
             if self._is_interesting(code, size):
-                r = {
-                    "path":    path,
-                    "word":    word,
-                    "method":  method,
-                    "code":    code,
-                    "size":    size,
-                    "headers": hdrs,
-                    "time":    datetime.now().isoformat(),
-                }
+                r = {"path": path, "word": word, "method": method,
+                     "code": code, "size": size, "headers": hdrs,
+                     "time": datetime.now().isoformat()}
                 with lock:
                     results.append(r)
-                    # Smart suggestions (silent during scan, printed after)
                     if code == 403:
-                        suggest(f"403 at {path} — try bypass: X-Original-URL, X-Rewrite-URL headers")
+                        suggest(f"403 at {path} — try: X-Original-URL, X-Rewrite-URL")
                     if "upload" in path.lower() or "file" in path.lower():
                         suggest(f"Upload endpoint at {path} — consider PUT fuzzing")
-                    if code == 200 and hdrs.get("content-type", "").startswith("application/json"):
+                    if code == 200 and hdrs.get("content-type","").startswith("application/json"):
                         suggest(f"API response at {path} — try JSON body fuzzing")
                     if code == 200 and ("login" in path.lower() or "auth" in path.lower()):
-                        suggest(f"Login endpoint at {path} — try POST parameter fuzzing")
+                        suggest(f"Login at {path} — try POST parameter fuzzing")
             return None
 
-        # Live timer thread
+        # Live timer with ETA
         timer_stop = threading.Event()
         spinner = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
 
@@ -561,19 +555,16 @@ class HTTPEngine:
             i = 0
             while not timer_stop.is_set():
                 elapsed = time.time() - start
-                current = done[0]
-                pct = (current / total * 100) if total else 0
-                # ETA calculation
-                if current > 0 and elapsed > 0:
-                    rate = current / elapsed
-                    remaining = (total - current) / rate if rate > 0 else 0
+                cur = done[0]
+                pct = (cur / total * 100) if total else 0
+                eta_str = "--:--:--"
+                if cur > 0 and elapsed > 0:
+                    rate = cur / elapsed
+                    remaining = (total - cur) / rate
                     eta_str = time.strftime("%H:%M:%S", time.gmtime(remaining))
-                else:
-                    eta_str = "--:--:--"
                 e_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
-                spin = spinner[i % len(spinner)]
-                print(f"\r  {C.CYAN}{spin}{C.RESET} "
-                      f"{current}/{total} ({pct:.1f}%)  "
+                print(f"\r  {C.CYAN}{spinner[i % len(spinner)]}{C.RESET} "
+                      f"{cur}/{total} ({pct:.1f}%)  "
                       f"Elapsed: {C.YELLOW}{e_str}{C.RESET}  "
                       f"ETA: {C.GREEN}{eta_str}{C.RESET}   ",
                       end="", flush=True)
@@ -581,12 +572,10 @@ class HTTPEngine:
                 time.sleep(0.2)
             elapsed = time.time() - start
             e_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
-            print(f"\r  {C.GREEN}✔{C.RESET} Done in {C.YELLOW}{e_str}{C.RESET}"
-                  + " " * 40)
+            print(f"\r  {C.GREEN}✔{C.RESET} Done in {C.YELLOW}{e_str}{C.RESET}" + " " * 40)
 
         t = threading.Thread(target=_timer, daemon=True)
         t.start()
-
         with ThreadPoolExecutor(max_workers=self.threads) as ex:
             futures = [ex.submit(worker, p) for p in paths]
             for f in as_completed(futures):
@@ -594,7 +583,6 @@ class HTTPEngine:
                     ex.shutdown(wait=False, cancel_futures=True)
                     break
                 f.result()
-
         timer_stop.set()
         t.join()
         return results
@@ -632,9 +620,8 @@ class ExternalFuzzer:
     def _run(self, cmd: List[str], category: str, label: str,
              metadata: dict = None) -> Tuple[int, str]:
         """
-        Execute subprocess completely silently.
-        Shows only a live timer: elapsed + estimated time remaining.
-        All tool output is captured and saved to file — nothing printed to screen.
+        Run external tool completely silently.
+        Shows only a live elapsed timer. All output captured and saved to file.
         """
         info(f"Running: {C.GREY}{' '.join(cmd)}{C.RESET}")
         output_lines = []
@@ -642,24 +629,20 @@ class ExternalFuzzer:
         timer_stop = threading.Event()
 
         def _timer():
-            """Background thread: prints elapsed + ETA on a single updating line."""
             spinner = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
             i = 0
             while not timer_stop.is_set():
                 elapsed = time.time() - start
                 e_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
-                spin = spinner[i % len(spinner)]
-                print(f"\r  {C.CYAN}{spin}{C.RESET} Running... "
+                print(f"\r  {C.CYAN}{spinner[i % len(spinner)]}{C.RESET} Running... "
                       f"Elapsed: {C.YELLOW}{e_str}{C.RESET}   "
                       f"{C.GREY}(Ctrl+C to stop){C.RESET}   ",
                       end="", flush=True)
                 i += 1
                 time.sleep(0.1)
-            # Print final elapsed on its own line
             elapsed = time.time() - start
             e_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
-            print(f"\r  {C.GREEN}✔{C.RESET} Done in {C.YELLOW}{e_str}{C.RESET}"
-                  + " " * 30)
+            print(f"\r  {C.GREEN}✔{C.RESET} Done in {C.YELLOW}{e_str}{C.RESET}" + " " * 35)
 
         t = threading.Thread(target=_timer, daemon=True)
         t.start()
@@ -675,20 +658,18 @@ class ExternalFuzzer:
             for line in proc.stdout:
                 stripped = line.rstrip()
                 if stripped:
-                    output_lines.append(stripped)  # capture silently — no print
+                    output_lines.append(stripped)
                 if _STOP_EVENT.is_set():
                     proc.terminate()
                     break
             proc.wait()
             rc = proc.returncode
         except FileNotFoundError:
-            timer_stop.set()
-            t.join()
+            timer_stop.set(); t.join()
             error(f"Tool not found: {cmd[0]}")
             return -1, ""
         except Exception as e:
-            timer_stop.set()
-            t.join()
+            timer_stop.set(); t.join()
             error(f"Subprocess error: {e}")
             return -1, ""
         finally:
@@ -698,50 +679,58 @@ class ExternalFuzzer:
         raw = "\n".join(output_lines)
         if raw.strip():
             fpath = self.om.save_result(category, label, raw, metadata)
-            # Count real findings (lines with HTTP status codes)
-            hits = sum(1 for l in output_lines if re.search(r'\b[245]\d{2}\b', l))
+            # Count hits — lines containing a status code pattern
+            hits = [l for l in output_lines if re.search(r'\[Status:\s*[2345]\d{2}', l)]
             if hits:
-                success(f"{C.GREEN}{hits} result(s) found{C.RESET} → {C.CYAN}{fpath}{C.RESET}")
+                success(f"{C.GREEN}{len(hits)} result(s) found{C.RESET} → {C.CYAN}{fpath}{C.RESET}")
+                for h in hits:
+                    # Print just the found lines cleanly
+                    print(f"  {C.MAGENTA}►{C.RESET} {h.strip()}")
             else:
-                info(f"No results. Raw output saved → {C.GREY}{fpath}{C.RESET}")
+                info(f"No results. Output saved → {C.GREY}{fpath}{C.RESET}")
         else:
-            info("No output captured.")
+            warn("No output captured from tool.")
         return rc, raw
 
     # ── ffuf wrappers ─────────────────────────────────────────────────
 
-    def ffuf_dir(self, target: str, wordlist: Path, extensions: str = "") -> int:
+    def ffuf_dir(self, target: str, wordlist: Path, extensions: str = "",
+                 baseline_size: int = 0) -> int:
         """Directory + file fuzzing via ffuf."""
         cmd = [
             "ffuf", "-u", f"{target}/FUZZ",
             "-w", str(wordlist),
             "-t", str(self.threads),
-            "-timeout", str(self.timeout),   # ffuf uses -timeout (single dash)
+            "-timeout", str(self.timeout),
             "-mc", self.match_codes,
-            "-c", "-v", "-s", "-ic",
+            "-ac",          # auto-calibration: learns normal response pattern
+            "-c", "-s",     # colorize, silent banner
+            "-ic",          # ignore comment lines in wordlist
         ]
+        if baseline_size:
+            cmd += ["-fs", str(baseline_size)]
         if extensions:
             cmd += ["-e", extensions]
-        meta = {"tool": "ffuf", "mode": "directory",
-                "target": target, "wordlist": str(wordlist),
-                "threads": self.threads}
+        meta = {"tool": "ffuf", "mode": "directory", "target": target,
+                "wordlist": str(wordlist), "threads": self.threads,
+                "baseline_filtered": baseline_size}
         rc, _ = self._run(cmd, "directories", "ffuf_dir", meta)
         return rc
 
-    def ffuf_params(self, target: str, wordlist: Path, method: str = "GET") -> int:
+    def ffuf_params(self, target: str, wordlist: Path, method: str = "GET",
+                    baseline_size: int = 0) -> int:
         """GET/POST parameter fuzzing via ffuf."""
-        if method.upper() == "GET":
-            url = f"{target}?FUZZ=value"
-        else:
-            url = target
+        url = f"{target}?FUZZ=value" if method.upper() == "GET" else target
         cmd = [
             "ffuf", "-u", url,
             "-w", str(wordlist),
             "-t", str(self.threads),
             "-timeout", str(self.timeout),
             "-mc", self.match_codes,
-            "-c", "-v", "-s", "-ic",
+            "-ac", "-c", "-s", "-ic",
         ]
+        if baseline_size:
+            cmd += ["-fs", str(baseline_size)]
         if method.upper() == "POST":
             cmd += ["-X", "POST", "-d", "FUZZ=value",
                     "-H", "Content-Type: application/x-www-form-urlencoded"]
@@ -750,8 +739,13 @@ class ExternalFuzzer:
         rc, _ = self._run(cmd, "parameters", f"ffuf_param_{method.lower()}", meta)
         return rc
 
-    def ffuf_vhost(self, target: str, wordlist: Path, domain: str) -> int:
-        """VHost fuzzing via ffuf."""
+    def ffuf_vhost(self, target: str, wordlist: Path, domain: str,
+                   baseline_size: int = 0) -> int:
+        """
+        VHost fuzzing via ffuf.
+        IMPORTANT: -fs baseline_size is critical here — without it every single
+        subdomain word gets matched because the server returns the same page for all.
+        """
         cmd = [
             "ffuf", "-u", target,
             "-w", str(wordlist),
@@ -759,14 +753,19 @@ class ExternalFuzzer:
             "-t", str(self.threads),
             "-timeout", str(self.timeout),
             "-mc", self.match_codes,
-            "-c", "-v", "-s", "-ic",
+            "-ac",          # auto-calibration — essential for vhost
+            "-c", "-s", "-ic",
         ]
+        if baseline_size:
+            cmd += ["-fs", str(baseline_size)]
         meta = {"tool": "ffuf", "mode": "vhost", "domain": domain,
-                "target": target, "wordlist": str(wordlist)}
+                "target": target, "wordlist": str(wordlist),
+                "baseline_filtered": baseline_size}
         rc, _ = self._run(cmd, "vhosts", "ffuf_vhost", meta)
         return rc
 
-    def ffuf_json(self, target: str, wordlist: Path, json_template: str) -> int:
+    def ffuf_json(self, target: str, wordlist: Path, json_template: str,
+                  baseline_size: int = 0) -> int:
         """JSON body fuzzing via ffuf."""
         cmd = [
             "ffuf", "-u", target,
@@ -777,15 +776,18 @@ class ExternalFuzzer:
             "-t", str(self.threads),
             "-timeout", str(self.timeout),
             "-mc", self.match_codes,
-            "-c", "-v", "-s", "-ic",
+            "-ac", "-c", "-s", "-ic",
         ]
+        if baseline_size:
+            cmd += ["-fs", str(baseline_size)]
         meta = {"tool": "ffuf", "mode": "json_body",
                 "target": target, "template": json_template}
         rc, _ = self._run(cmd, "json", "ffuf_json", meta)
         return rc
 
     def ffuf_recursive(self, target: str, wordlist: Path,
-                       depth: int = 2, extensions: str = "") -> int:
+                       depth: int = 2, extensions: str = "",
+                       baseline_size: int = 0) -> int:
         """Recursive directory fuzzing via ffuf."""
         out_file = str(self.om.path("directories") / "ffuf_recursive.json")
         cmd = [
@@ -795,9 +797,11 @@ class ExternalFuzzer:
             "-timeout", str(self.timeout),
             "-mc", self.match_codes,
             "-recursion", "-recursion-depth", str(depth),
-            "-c", "-v", "-s", "-ic",
+            "-ac", "-c", "-s", "-ic",
             "-o", out_file, "-of", "json",
         ]
+        if baseline_size:
+            cmd += ["-fs", str(baseline_size)]
         if extensions:
             cmd += ["-e", extensions]
         meta = {"tool": "ffuf", "mode": "recursive",
@@ -813,13 +817,15 @@ class ExternalFuzzer:
             "-w", str(wordlist),
             "-t", str(self.threads),
             "--timeout", f"{self.timeout}s",
+            "-q",
         ]
         meta = {"tool": "gobuster", "mode": "dns",
                 "domain": domain, "wordlist": str(wordlist)}
         rc, _ = self._run(cmd, "subdomains", "gobuster_dns", meta)
         return rc
 
-    def gobuster_dir(self, target: str, wordlist: Path, extensions: str = "") -> int:
+    def gobuster_dir(self, target: str, wordlist: Path, extensions: str = "",
+                     baseline_size: int = 0) -> int:
         """Directory bruting via gobuster dir."""
         cmd = [
             "gobuster", "dir",
@@ -828,6 +834,7 @@ class ExternalFuzzer:
             "-t", str(self.threads),
             "--timeout", f"{self.timeout}s",
             "-s", self.match_codes,
+            "-q", "--no-error",
         ]
         if extensions:
             cmd += ["-x", extensions.lstrip(".")]
@@ -1009,6 +1016,8 @@ class WebFuzz:
 
         # Tracks which wordlists have been used per category for escalation
         self._used_wordlists: Dict[str, List[Path]] = {}
+        # Baseline 404 size — set after run_baseline(), passed to ffuf -fs
+        self._baseline_size: int = 0
 
     def _get_wordlist(self, category: str) -> Optional[Path]:
         """
@@ -1062,6 +1071,9 @@ class WebFuzz:
             info(f"Server      : {C.CYAN}{bl.get('server')}{C.RESET}")
             info(f"404 size    : {C.CYAN}{bl.get('size')} bytes{C.RESET}")
             info(f"Content-Type: {C.CYAN}{bl.get('content_type')}{C.RESET}")
+            self._baseline_size = bl.get("size", 0)
+            if self._baseline_size:
+                info(f"Noise filter: {C.GREY}-fs {self._baseline_size} will be applied to all ffuf scans{C.RESET}")
         return bl
 
     def run_directory_fuzz(self):
@@ -1073,11 +1085,11 @@ class WebFuzz:
         tools = ToolChecker.check_all()
         if tools.get("ffuf"):
             ext_str = ",".join(self.extensions)
-            rc = self.ext_fuzzer.ffuf_dir(self.target, wl, ext_str)
+            rc = self.ext_fuzzer.ffuf_dir(self.target, wl, ext_str, self._baseline_size)
             return [{"tool": "ffuf", "rc": rc}]
         elif tools.get("gobuster"):
             ext_str = ",".join(e.lstrip(".") for e in self.extensions)
-            rc = self.ext_fuzzer.gobuster_dir(self.target, wl, ext_str)
+            rc = self.ext_fuzzer.gobuster_dir(self.target, wl, ext_str, self._baseline_size)
             return [{"tool": "gobuster", "rc": rc}]
         else:
             warn("Neither ffuf nor gobuster found. Using built-in engine.")
@@ -1101,7 +1113,7 @@ class WebFuzz:
         tools = ToolChecker.check_all()
         ext_str = ",".join(self.extensions)
         if tools.get("ffuf"):
-            self.ext_fuzzer.ffuf_dir(self.target, wl, ext_str)
+            self.ext_fuzzer.ffuf_dir(self.target, wl, ext_str, self._baseline_size)
         else:
             words = load_wordlist(wl)
             all_words = []
@@ -1123,7 +1135,7 @@ class WebFuzz:
         tools = ToolChecker.check_all()
         ext_str = ",".join(self.extensions)
         if tools.get("ffuf"):
-            self.ext_fuzzer.ffuf_recursive(self.target, wl, depth, ext_str)
+            self.ext_fuzzer.ffuf_recursive(self.target, wl, depth, ext_str, self._baseline_size)
         else:
             warn("ffuf required for recursive fuzzing. Install it: sudo apt install ffuf")
 
@@ -1135,7 +1147,7 @@ class WebFuzz:
 
         tools = ToolChecker.check_all()
         if tools.get("ffuf"):
-            self.ext_fuzzer.ffuf_params(self.target, wl, method)
+            self.ext_fuzzer.ffuf_params(self.target, wl, method, self._baseline_size)
         else:
             words = load_wordlist(wl)
             if method.upper() == "GET":
@@ -1208,7 +1220,7 @@ class WebFuzz:
 
         tools = ToolChecker.check_all()
         if tools.get("ffuf"):
-            self.ext_fuzzer.ffuf_vhost(self.target, wl, domain)
+            self.ext_fuzzer.ffuf_vhost(self.target, wl, domain, self._baseline_size)
         else:
             warn("ffuf required for VHost fuzzing.")
 
@@ -1239,7 +1251,7 @@ class WebFuzz:
         tools = ToolChecker.check_all()
         target_url = self.target + path
         if tools.get("ffuf"):
-            self.ext_fuzzer.ffuf_json(target_url, wl, template)
+            self.ext_fuzzer.ffuf_json(target_url, wl, template, self._baseline_size)
         else:
             words = load_wordlist(wl)
             results = self.http.fuzz_paths(
@@ -1458,12 +1470,13 @@ def build_argparser() -> argparse.ArgumentParser:
     )
 
     p.add_argument("-u",  "--target",     required=False, help="Target URL")
-    p.add_argument("-w",  "--wordlist",   help="Custom wordlist path")
+    p.add_argument("-w",  "--wordlist",   help="Custom wordlist path (overrides auto-selection)")
     p.add_argument(       "--domain",     help="Domain for subdomain/vhost fuzzing")
     p.add_argument("-T",  "--threads",    type=int, default=50, help="Thread count (default: 50)")
     p.add_argument(       "--timeout",    type=int, default=10, help="Request timeout seconds")
     p.add_argument(       "--deep",       action="store_true", help="Deep scan (larger wordlists)")
-    p.add_argument("-x",  "--extensions", help="Comma-separated extensions for file fuzzing")
+    p.add_argument(       "--ext",        dest="extensions",
+                          help="Comma-separated extensions (default: .php,.html,.txt,.bak,.js) — use 'all' for full list")
     p.add_argument(       "--cookies",    help="Cookie string: name=val; name2=val2")
     p.add_argument("-H",  "--header",     action="append", default=[],
                    metavar="Name:Value",  help="Custom header (repeatable)")
@@ -1525,11 +1538,16 @@ def main():
             k, v = hdr.split(":", 1)
             custom_hdrs[k.strip()] = v.strip()
 
-    # Parse custom extensions
+    # Parse extensions — --ext all expands to full list
     extensions = DEFAULT_EXTENSIONS
     if args.extensions:
-        extensions = [e if e.startswith(".") else f".{e}"
-                      for e in args.extensions.split(",")]
+        if args.extensions.strip().lower() == "all":
+            extensions = FULL_EXTENSIONS
+            info(f"Extensions: full list ({len(FULL_EXTENSIONS)} types)")
+        else:
+            extensions = [e.strip() if e.strip().startswith(".") else f".{e.strip()}"
+                          for e in args.extensions.split(",")]
+            info(f"Extensions: {', '.join(extensions)}")
 
     config = {
         "target":     args.target,
