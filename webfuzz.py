@@ -442,7 +442,7 @@ class HTTPEngine:
             try:
                 url = f"{proto}://{self.target.split('://')[-1]}"
                 req = urllib.request.Request(url + "/", method="HEAD")
-                req.add_unverifiable_header("User-Agent", "WebFuzz/2.0")
+                req.add_header("User-Agent", "WebFuzz/2.0")
                 urllib.request.urlopen(req, timeout=5)
                 return proto
             except Exception:
@@ -466,19 +466,19 @@ class HTTPEngine:
         data = body.encode() if body else None
 
         req = urllib.request.Request(url, data=data, method=method)
-        req.add_unverifiable_header("User-Agent", "Mozilla/5.0 (WebFuzz/2.0)")
-        req.add_unverifiable_header("Accept", "*/*")
+        req.add_header("User-Agent", "Mozilla/5.0 (WebFuzz/2.0)")
+        req.add_header("Accept", "*/*")
 
         # Use override_cookies if provided, otherwise fall back to self.cookies
         cookie_val = override_cookies if override_cookies is not None else self.cookies
         if cookie_val:
-            req.add_unverifiable_header("Cookie", cookie_val)
+            req.add_header("Cookie", cookie_val)
 
         for k, v in self.custom_headers.items():
-            req.add_unverifiable_header(k, v)
+            req.add_header(k, v)
         if extra_headers:
             for k, v in extra_headers.items():
-                req.add_unverifiable_header(k, v)
+                req.add_header(k, v)
 
         try:
             opener = urllib.request.build_opener(
@@ -645,7 +645,7 @@ class ExternalFuzzer:
             "-t", str(self.threads),
             "-timeout", str(self.timeout),   # ffuf uses -timeout (single dash)
             "-mc", self.match_codes,
-            "-c", "-v",
+            "-c", "-v", "-s", "-ic",
         ]
         if extensions:
             cmd += ["-e", extensions]
@@ -667,7 +667,7 @@ class ExternalFuzzer:
             "-t", str(self.threads),
             "-timeout", str(self.timeout),
             "-mc", self.match_codes,
-            "-c", "-v",
+            "-c", "-v", "-s", "-ic",
         ]
         if method.upper() == "POST":
             cmd += ["-X", "POST", "-d", "FUZZ=value",
@@ -686,7 +686,7 @@ class ExternalFuzzer:
             "-t", str(self.threads),
             "-timeout", str(self.timeout),
             "-mc", self.match_codes,
-            "-c", "-v",
+            "-c", "-v", "-s", "-ic",
         ]
         meta = {"tool": "ffuf", "mode": "vhost", "domain": domain,
                 "target": target, "wordlist": str(wordlist)}
@@ -704,7 +704,7 @@ class ExternalFuzzer:
             "-t", str(self.threads),
             "-timeout", str(self.timeout),
             "-mc", self.match_codes,
-            "-c", "-v",
+            "-c", "-v", "-s", "-ic",
         ]
         meta = {"tool": "ffuf", "mode": "json_body",
                 "target": target, "template": json_template}
@@ -722,7 +722,7 @@ class ExternalFuzzer:
             "-timeout", str(self.timeout),
             "-mc", self.match_codes,
             "-recursion", "-recursion-depth", str(depth),
-            "-c", "-v",
+            "-c", "-v", "-s", "-ic",
             "-o", out_file, "-of", "json",
         ]
         if extensions:
@@ -1112,7 +1112,7 @@ class WebFuzz:
                 "-H", f"Host: FUZZ.{base}",
                 "-t", str(self.threads),
                 "-mc", "200,301,302,307,401,403",
-                "-c", "-v",
+                "-c", "-v", "-s", "-ic",
             ]
             info(f"Running: {C.GREY}{' '.join(cmd)}{C.RESET}")
             subprocess.run(cmd)
