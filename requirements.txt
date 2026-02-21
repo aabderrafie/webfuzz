@@ -1,0 +1,6 @@
+# WebFuzz - Professional Web Fuzzing Tool
+# No external Python packages required — uses only the Python 3 standard library.
+#
+# However, for full functionality, install these system tools:
+#   sudo apt install ffuf gobuster curl
+#   sudo apt install seclists    # recommended wordlists

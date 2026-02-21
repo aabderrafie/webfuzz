@@ -3,10 +3,10 @@
 ╔══════════════════════════════════════════════════════════════════╗
 ║              WebFuzz - Professional Web Fuzzing Tool             ║
 ║          For Legal Penetration Testing Labs (HTB/THM/CTF)        ║
-║                     github.com/yourhandle/webfuzz                ║
+║                github.com/aabderrafie/webfuzz                    ║
 ╚══════════════════════════════════════════════════════════════════╝
 
-Author  : PenTest Automation Framework
+Author  : abderrafie (github.com/aabderrafie)
 Version : 2.0.0
 License : MIT
 Purpose : Automated web fuzzing for authorized security testing ONLY
