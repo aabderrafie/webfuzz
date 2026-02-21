@@ -120,37 +120,39 @@ python3 webfuzz.py -t http://10.10.10.10 --dir -T 100 --timeout 15 \
 ## Usage
 
 ```
-usage: webfuzz [-h] [-t TARGET] [--domain DOMAIN] [-T THREADS]
-               [--timeout TIMEOUT] [--deep] [-x EXTENSIONS]
-               [--cookies COOKIES] [-H Name:Value]
-               [--dir] [--files] [--recursive] [--params]
-               [--methods] [--put] [--subdomain] [--vhost]
-               [--headers] [--cookies-fuzz] [--json] [--full]
-               [--tools-check]
+usage: webfuzz [-h] [-t TARGET] [-w WORDLIST] [-D DOMAIN] [-T THREADS]
+               [--timeout TIMEOUT] [--deep] [-x EXTENSIONS] [-C COOKIES]
+               [-H Name:Value] [-d] [-F] [-r] [-p] [-m] [-P] [-s] [-v] [-hd]
+               [-c] [-j] [-f] [--put-path PUT_PATH] [--json-path JSON_PATH]
+               [--json-template JSON_TEMPLATE] [--cookie-name COOKIE_NAME]
+               [--method-paths METHOD_PATHS]
+               [--recursion-depth RECURSION_DEPTH] [--tools-check]
 
 Scan Modes:
-  --dir              Directory fuzzing
-  --files            File/extension fuzzing
-  --recursive        Recursive directory fuzzing
-  --params           GET + POST parameter fuzzing
-  --methods          HTTP method testing (all methods)
-  --put              PUT upload test
-  --subdomain        Subdomain enumeration
-  --vhost            VHost fuzzing
-  --headers          Header injection fuzzing
-  --cookies-fuzz     Cookie value fuzzing
-  --json             JSON body fuzzing
-  --full             Run ALL modules
+  -d, --dir             Directory fuzzing
+  -F, --files           File/extension fuzzing
+  -r, --recursive       Recursive directory fuzzing
+  -p, --params          GET+POST parameter fuzzing
+  -m, --methods         HTTP method testing (all)
+  -P, --put             PUT upload test
+  -s, --subdomain       Subdomain enumeration
+  -v, --vhost           VHost fuzzing
+  -hd, --headers        Header injection fuzzing
+  -c, --cookies-fuzz    Cookie value fuzzing
+  -j, --json            JSON body fuzzing
+  -f, --full            Run all modules
 
 Options:
-  -t, --target       Target URL
-  -T, --threads      Thread count (default: 50)
-  --timeout          Request timeout in seconds (default: 10)
-  --deep             Use larger wordlists for thorough scanning
-  -x, --extensions   Comma-separated file extensions
-  --cookies          Cookie string (name=val; name2=val2)
-  -H, --header       Custom header (repeatable)
-  --tools-check      Show tool & wordlist status, then exit
+  -t, --target TARGET   Target URL
+  -w, --wordlist WORDLIST Custom wordlist path
+  -D, --domain DOMAIN   Domain for subdomain/vhost fuzzing
+  -T, --threads THREADS Thread count (default: 50)
+  --timeout TIMEOUT     Request timeout seconds
+  --deep                Deep scan (larger wordlists)
+  -x, --extensions EXTENSIONS Comma-separated extensions for file fuzzing
+  -C, --cookies COOKIES Cookie string: name=val; name2=val2
+  -H, --header Name:Value Custom header (repeatable)
+  --tools-check         Show tool & wordlist status, then exit
 ```
 
 ---
